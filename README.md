@@ -10,4 +10,4 @@ This project is released under an open access license.
 
 ## Citation
 If you use this code, please cite the accompanying paper:
-**Symmetry Detection in Multi-Reference Alignment**
+**Symmetry Detection in Multi-Reference Alignment** by Nir Sharon and Sheng Xu 
