@@ -1,136 +1,78 @@
-function [G, nodes_info] = hasse_diagram_dihedral_group(n)
-% Build Hasse diagram (subgroup lattice) for D_{2n}, keeping your cyclic style.
-% Labels follow your convention: D_n has order 2n; sub-dihedrals are D_m.
-
-    if ~isscalar(n) || n < 3 || floor(n) ~= n
-        error('Input must be an integer n >= 3 (so |D_{2n}| = 2n >= 6).');
+function [G, nodes_info] = hasse_diagram_dihedral_group(d)
+    % Builds the Hasse diagram for Dihedral MRA (Collapsed Regime: odd d)
+    % Based on Section 5.3.1, Case 1 of the paper.
+    
+    if mod(d, 2) == 0
+        error('This function currently assumes d is odd (collapsed regime).');
     end
-
-    divs = sort(divisors_of_n(n), 'descend');  % divisors of n
-
-    nodes_info = struct('order', {}, 'generator', {}, 'alpha', {}, 'p_value', {});
-    labels   = {};       % for NodeLabel
-    kinds    = {};       % 'C','R*','D','G'
-    params_m = [];       % m for C_m / D_{2m}
-
-    % 1) Cyclic rotation subgroups C_m (m|n), descending m, SKIP m=1
-    for m = divs
-        if m == 1, continue; end               % <-- remove C_1
-        nodes_info(end+1).order   = m;         % |C_m|=m
-        nodes_info(end).generator = mod(n/m, n);
-        nodes_info(end).alpha     = 0.05;
-        nodes_info(end).p_value   = 0;
-        labels{end+1}             = sprintf('C_{%d}', m);
-        kinds{end+1}              = 'C';
-        params_m(end+1)           = m;
+    
+    % Get sorted divisors descending (e.g., [81, 27, 9, 3, 1])
+    % Note: Replace 'find_divisors' with your actual function name if different
+    divs = sort(find_divisors(d), 'descend'); 
+    
+    nodes_info = struct('order', {}, 'type', {}, 'alpha', {}, 'p_value', {});
+    
+    % Maps to easily look up node indices when building edges
+    D_idx = containers.Map('KeyType', 'double', 'ValueType', 'double');
+    C_idx = containers.Map('KeyType', 'double', 'ValueType', 'double');
+    
+    curr_idx = 1;
+    
+    % 1. Create all D_m nodes
+    for i = 1:length(divs)
+        m = divs(i);
+        nodes_info(curr_idx).order = m;
+        nodes_info(curr_idx).type = 'D';
+        nodes_info(curr_idx).alpha = 0.05;
+        nodes_info(curr_idx).p_value = 0;
+        D_idx(m) = curr_idx;
+        curr_idx = curr_idx + 1;
     end
-
-    % 2) Collapsed reflections node (all <r^k s>)
-    nodes_info(end+1).order   = 2;
-    nodes_info(end).generator = -1;            % placeholder
-    nodes_info(end).alpha     = 0.05;
-    nodes_info(end).p_value   = 0;
-    labels{end+1}             = 'C_{2}^{(refl)}';  % <-- disambiguate
-    kinds{end+1}              = 'R*';
-    params_m(end+1)           = 0;
-
-    % 3) Dihedral subgroups D_{2m} for m|n, m<n (descending m)
-    for m = divs
-        if m < n
-            nodes_info(end+1).order   = 2*m;   % |D_{2m}|=2m
-            nodes_info(end).generator = -m;    % placeholder
-            nodes_info(end).alpha     = 0.05;
-            nodes_info(end).p_value   = 0;
-            labels{end+1}             = sprintf('D_{%d}', m);  % D_m (your style)
-            kinds{end+1}              = 'D';
-            params_m(end+1)           = m;
+    
+    % 2. Create C_m nodes (excluding C_d and C_1 as per the paper)
+    for i = 1:length(divs)
+        m = divs(i);
+        if m == d || m == 1
+            continue;
         end
+        nodes_info(curr_idx).order = m;
+        nodes_info(curr_idx).type = 'C';
+        nodes_info(curr_idx).alpha = 0.05;
+        nodes_info(curr_idx).p_value = 0;
+        C_idx(m) = curr_idx;
+        curr_idx = curr_idx + 1;
     end
-
-    % 4) Top group D_{2n}
-    nodes_info(end+1).order   = 2*n;
-    nodes_info(end).generator = 0;
-    nodes_info(end).alpha     = 0.05;
-    nodes_info(end).p_value   = 0;
-    labels{end+1}             = sprintf('D_{%d}', n);          % D_n (your style)
-    kinds{end+1}              = 'G';
-    params_m(end+1)           = n;
-
-    N = numel(nodes_info);
-
-    % ------- edges (containment) then keep only covers ----------
-    edges_all = [];
-
-    % Cyclic chain: C_m -> C_d when d | m
-    C_idx = find(strcmp(kinds,'C'));
-    for ii = 1:numel(C_idx)
-        i = C_idx(ii);  Mi = params_m(i);
-        for jj = 1:numel(C_idx)
-            j = C_idx(jj);  Dj = params_m(j);
-            if Mi ~= Dj && mod(Mi, Dj) == 0
-                edges_all(end+1,:) = [i, j]; %#ok<AGROW>
+    
+    edges = [];
+    
+    % 3. Build the directed edges (Implications)
+    for i = 1:length(divs)
+        m1 = divs(i);
+        
+        % D_{m1} -> D_{m2} (if m1/m2 is prime)
+        for j = i+1:length(divs)
+            m2 = divs(j);
+            if mod(m1, m2) == 0 && isprime(m1 / m2)
+                edges = [edges; D_idx(m1), D_idx(m2)];
             end
         end
-    end
-
-    % D_{2m} includes C_d for d | m  → edge D_{2m} -> C_d
-    D_idx = find(strcmp(kinds,'D'));
-    for ii = 1:numel(D_idx)
-        i = D_idx(ii);  Mi = params_m(i);
-        for jj = 1:numel(C_idx)
-            j = C_idx(jj);  Dj = params_m(j);
-            if mod(Mi, Dj) == 0
-                edges_all(end+1,:) = [i, j]; %#ok<AGROW>
+        
+        % C_{m1} -> C_{m2} (if m1/m2 is prime)
+        if isKey(C_idx, m1)
+            for j = i+1:length(divs)
+                m2 = divs(j);
+                if isKey(C_idx, m2) && mod(m1, m2) == 0 && isprime(m1 / m2)
+                    edges = [edges; C_idx(m1), C_idx(m2)];
+                end
             end
         end
-    end
-
-    % Dihedral chain: D_{2m} -> D_{2d} when d | m, d < m
-    for ii = 1:numel(D_idx)
-        i = D_idx(ii);  Mi = params_m(i);
-        for jj = 1:numel(D_idx)
-            j = D_idx(jj);  Dj = params_m(j);
-            if Mi ~= Dj && mod(Mi, Dj) == 0
-                edges_all(end+1,:) = [i, j]; %#ok<AGROW>
-            end
+        
+        % D_{m1} -> C_{m1} (Dihedral implies Cyclic)
+        if isKey(C_idx, m1)
+            edges = [edges; D_idx(m1), C_idx(m1)];
         end
     end
-
-    % Reflections contained in every D_{2m} and in the top D_{2n}
-    R_idx = find(strcmp(kinds,'R*'));
-    for ii = 1:numel(D_idx)
-        i = D_idx(ii);
-        edges_all(end+1,:) = [i, R_idx]; %#ok<AGROW>
-    end
-    G_idx = find(strcmp(kinds,'G'));
-    edges_all(end+1,:) = [G_idx, R_idx];
-
-    % Top includes all D_{2m} and all C_m
-    for ii = 1:numel(D_idx), edges_all(end+1,:) = [G_idx, D_idx(ii)]; end
-    for ii = 1:numel(C_idx), edges_all(end+1,:) = [G_idx, C_idx(ii)]; end
-
-    % ---- keep only cover edges (minimal) ----
-    edges_all = unique(edges_all, 'rows');
-    A = false(N,N);
-    for e = 1:size(edges_all,1), A(edges_all(e,1), edges_all(e,2)) = true; end
-    keep = true(size(edges_all,1),1);
-    for e = 1:size(edges_all,1)
-        i = edges_all(e,1); j = edges_all(e,2);
-        for k = 1:N
-            if k~=i && k~=j && A(i,k) && A(k,j), keep(e)=false; break; end
-        end
-    end
-    edges_cover = edges_all(keep,:);
-
-    G = digraph(edges_cover(:,1), edges_cover(:,2), [], N);
-
-    % Optional labels for plotting
-    try, G.Nodes.Label = labels(:); end
-end
-
-function divs = divisors_of_n(n)
-    divs = [];
-    for k = 1:n
-        if mod(n,k) == 0, divs = [divs k]; end %#ok<AGROW>
-    end
+    
+    % Create the directed graph
+    G = digraph(edges(:,1), edges(:,2));
 end
